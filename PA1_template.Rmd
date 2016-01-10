@@ -2,7 +2,7 @@
 title: "PA1_template"
 author: "ande4148"
 date: "December 20, 2015"
-output: html_document
+output: md_document
 ---
 
 Load libraries:
