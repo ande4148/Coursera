@@ -1,0 +1,108 @@
+---
+title: "Prediction Assignment"
+author: "ande4148"
+date: "May 14, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Prediction Assignment
+
+
+##Load ackages and data; explore data
+Output hidden for space.
+
+```{r}
+library(caret); library(SOAR); library(rpart); library(randomForest);
+library(gbm); library(ggplot2); library(lattice); library(mgcv);
+library(nlme); library(parallel); library(plyr); library(splines);
+library(survival)
+
+plm <- read.csv("pml-training.csv")
+plm2 <- read.csv("pml-testing.csv")
+summary(plm)
+```
+
+##Subset ata
+Remove columns with NA values, are merely identifiers, are timestamps.
+
+```{r}
+plmnas <- sapply(plm2, function (x) any(is.na(x)))
+plmnanames <- plmnas[plmnas == FALSE]
+fortrain <- c("classe", "problem_id",names(plmnanames))
+plm <- plm[,names(plm) %in% fortrain]
+plm <- plm[,-c(1:7)]
+```
+
+##Split data into training test and validation sets
+Remove and store objects to save space
+
+```{r}
+set.seed(23632)
+inBuild <- createDataPartition(y=plm$classe, p=0.75, list = F)
+validation <- plm[-inBuild,]; 
+buildData <- plm[inBuild,]
+inTrain <- createDataPartition(y=buildData$classe, p=0.67, list = F)
+training <- buildData[inTrain,]; testing <- buildData[-inTrain,]
+
+Store(validation, training, testing)
+rm(inBuild, buildData,inTrain, plm, plm2, plmnas, plmnanames, fortrain)
+gc()
+```
+
+##Build models
+
+###Build and test basic tree model
+5 K cross validation parameter
+
+```{r}
+train_control <- trainControl(method="cv", number = 5)
+mod1 <- train(classe ~., data = training, method = "rpart", trControl = train_control)
+pred1 <- predict(mod1, newdata = testing)
+confusionMatrix(pred1, testing$classe)$overall
+varImp(mod1)
+Store(mod1)
+```
+
+This model does not seem very accurate on the set test set.
+
+###Build and test a random forest model
+Variable importance shown
+```{r}
+mod2 <- train(classe ~., data = training, method = "rf")
+pred2 <- predict(mod2, newdata = testing)
+confusionMatrix(pred2, testing$classe)$overall
+Store(mod2)
+gc()
+```
+
+This model seems quite accurate.
+
+###Build and test a gradient boosted model 
+
+```{r}
+mod3 <- train(classe ~., data = training, method = "gbm")
+pred3 <- predict(mod3, newdata = testing)
+confusionMatrix(pred3, testing$classe)$overall
+Store(mod3)
+```
+
+This model seems about as accurate as the random forest.
+
+###Combine random forest and boosted models to further reduce error
+Models run on test data and combined to create a combined model that is used on the validation data to provide independent accuracy estimate.
+
+```{r}
+preddf <- data.frame(pred2, pred3, classe=testing$classe)
+combmod <- train(classe ~., method = "gbm", data=preddf)
+pred2v <- predict(mod2, validation)
+pred3v <- predict(mod3, validation)
+predvdf <- data.frame(pred2=pred2v, pred3=pred3v)
+combpredv <- predict(combmod, predvdf)
+confusionMatrix(combpredv, validation$classe)$overall
+```
+
+This seems like it will be a very well-perfoming final model.
